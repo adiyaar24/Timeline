@@ -27,21 +27,31 @@ import {
   Close as CloseIcon,
   Visibility as ViewIcon,
   AccountTree as DiffIcon,
+  OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
+
+interface DynamicLink {
+  name: string;
+  url: string;
+}
 
 interface AuditEntry {
   timestamp: string;
   action: string;
+  executionId?: string;
   config: Record<string, any>;
+  [key: string]: any; // Allow additional fields like awxJob1-link
 }
 
 interface ProcessedAudit {
   timestamp: string;
   timestampMs: number;
   action: string;
+  executionId?: string;
   config: Record<string, any>;
   formattedDate: string;
   relativeTime: string;
+  dynamicLinks: DynamicLink[];
 }
 
 export const TimelineTable = () => {
@@ -93,13 +103,28 @@ export const TimelineTable = () => {
         const timestampMs = parseInt(timestamp, 10);
         const timeFormatted = formatTime(timestampMs);
 
+        // Extract dynamic links (fields ending with -link)
+        const dynamicLinks: DynamicLink[] = [];
+        Object.entries(audit).forEach(([key, value]) => {
+          if (key.endsWith('-link') && typeof value === 'string' && value.trim()) {
+            // Extract friendly name by removing '-link' suffix
+            const friendlyName = key.replace(/-link$/, '');
+            dynamicLinks.push({
+              name: friendlyName,
+              url: value,
+            });
+          }
+        });
+
         return {
           timestamp,
           timestampMs,
           action: audit.action,
+          executionId: audit.executionId,
           config: audit.config,
           formattedDate: `${timeFormatted.date} ${timeFormatted.time}`,
           relativeTime: timeFormatted.relative,
+          dynamicLinks,
         } as ProcessedAudit;
       })
       .sort((a, b) => b.timestampMs - a.timestampMs);
@@ -198,6 +223,9 @@ export const TimelineTable = () => {
                     <strong>Module</strong>
                   </TableCell>
                   <TableCell>
+                    <strong>Links</strong>
+                  </TableCell>
+                  <TableCell>
                     <strong>Actions</strong>
                   </TableCell>
                 </TableRow>
@@ -279,6 +307,71 @@ export const TimelineTable = () => {
                           {audit.config.module_name?.split('/').pop() ||
                             'terraform-module'}
                         </Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        {audit.executionId && (
+                          <Tooltip title={audit.executionId} arrow>
+                            <IconButton
+                              size="small"
+                              component="a"
+                              href={audit.executionId}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              sx={{
+                                color: 'primary.main',
+                                '&:hover': { backgroundColor: 'primary.light' },
+                              }}
+                            >
+                              <OpenInNewIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        {audit.dynamicLinks.map((link) => (
+                          <Tooltip 
+                            key={link.name} 
+                            title={
+                              <Box>
+                                <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
+                                  {link.name}
+                                </Typography>
+                                <Typography variant="caption" sx={{ display: 'block', wordBreak: 'break-all' }}>
+                                  {link.url}
+                                </Typography>
+                              </Box>
+                            } 
+                            arrow
+                          >
+                            <IconButton
+                              size="small"
+                              component="a"
+                              href={link.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              sx={{
+                                color: 'primary.main',
+                                fontSize: '11px',
+                                minWidth: 'auto',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                border: '1px solid',
+                                borderColor: 'primary.light',
+                                '&:hover': { 
+                                  backgroundColor: 'transparent',
+                                  textDecoration: 'underline',
+                                },
+                              }}
+                            >
+                              {link.name}
+                            </IconButton>
+                          </Tooltip>
+                        ))}
+                        {!audit.executionId && audit.dynamicLinks.length === 0 && (
+                          <Typography variant="caption" color="textSecondary">
+                            —
+                          </Typography>
+                        )}
                       </Box>
                     </TableCell>
                     <TableCell>

@@ -40,6 +40,8 @@ interface AuditEntry {
   action: string;
   executionId?: string;
   config: Record<string, any>;
+  
+  triggeredBy?: string;
   [key: string]: any; // Allow additional fields like awxJob1-link
 }
 
@@ -47,6 +49,8 @@ interface ProcessedAudit {
   timestamp: string;
   timestampMs: number;
   action: string;
+  /** Per audit: triggeredBy, else entity spec.owner */
+  triggeredBy?: string;
   executionId?: string;
   config: Record<string, any>;
   formattedDate: string;
@@ -98,10 +102,29 @@ export const TimelineTable = () => {
       return [];
     }
 
-    return Object.entries(auditData as unknown as Record<string, AuditEntry>)
-      .map(([timestamp, audit]) => {
+    const specOwnerRaw = entity?.spec?.owner;
+    const specOwner =
+      typeof specOwnerRaw === 'string' && specOwnerRaw.trim().length > 0
+        ? specOwnerRaw.trim()
+        : undefined;
+
+    return Object.entries(auditData as unknown as Record<string, unknown>)
+      .flatMap(([timestamp, raw]) => {
+        if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) {
+          return [];
+        }
+        const audit = raw as AuditEntry;
+
         const timestampMs = parseInt(timestamp, 10);
         const timeFormatted = formatTime(timestampMs);
+
+        const triggeredByCandidate = audit.triggeredBy;
+        const fromAudit =
+          typeof triggeredByCandidate === 'string' &&
+          triggeredByCandidate.trim().length > 0
+            ? triggeredByCandidate.trim()
+            : undefined;
+        const triggeredBy = fromAudit ?? specOwner;
 
         // Extract dynamic links (fields ending with -link)
         const dynamicLinks: DynamicLink[] = [];
@@ -116,16 +139,19 @@ export const TimelineTable = () => {
           }
         });
 
-        return {
-          timestamp,
-          timestampMs,
-          action: audit.action,
-          executionId: audit.executionId,
-          config: audit.config,
-          formattedDate: `${timeFormatted.date} ${timeFormatted.time}`,
-          relativeTime: timeFormatted.relative,
-          dynamicLinks,
-        } as ProcessedAudit;
+        return [
+          {
+            timestamp,
+            timestampMs,
+            action: audit.action ?? '',
+            triggeredBy,
+            executionId: audit.executionId,
+            config: audit.config ?? {},
+            formattedDate: `${timeFormatted.date} ${timeFormatted.time}`,
+            relativeTime: timeFormatted.relative,
+            dynamicLinks,
+          } as ProcessedAudit,
+        ];
       })
       .sort((a, b) => b.timestampMs - a.timestampMs);
   }, [entity]);
@@ -133,7 +159,8 @@ export const TimelineTable = () => {
   const filteredAudits = useMemo(() => {
     if (actionFilter === 'all') return allAudits;
     return allAudits.filter(
-      audit => audit.action.toLowerCase() === actionFilter,
+      audit =>
+        (audit.action ?? '').toLowerCase() === actionFilter,
     );
   }, [allAudits, actionFilter]);
 
@@ -205,7 +232,7 @@ export const TimelineTable = () => {
                     <strong>Time</strong>
                   </TableCell>
                   <TableCell>
-                    <strong>User</strong>
+                    <strong>Triggered by</strong>
                   </TableCell>
                   <TableCell>
                     <strong>Action</strong>
@@ -244,8 +271,8 @@ export const TimelineTable = () => {
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2">
-                        {entity?.spec?.owner || 'System'}
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {audit.triggeredBy ?? '—'}
                       </Typography>
                     </TableCell>
                     <TableCell>
